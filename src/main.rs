@@ -1,5 +1,6 @@
 use inquire::{InquireError, Select};
 use std::{
+    fs,
     io::{BufRead, BufReader},
     process::Command,
 };
@@ -28,12 +29,6 @@ fn amend_to_selected_commit(hash: &str) -> Result<(), Box<dyn std::error::Error>
         .args(&["commit", "-m", "__amend__"])
         .output()?;
 
-    // Step 2: Get the current branch name
-    let branch_output = Command::new("git")
-        .args(&["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()?;
-    let current_branch = String::from_utf8(branch_output.stdout)?.trim().to_string();
-
     // Step 3: Start an interactive rebase
     let rebase_output = Command::new("git")
         .args(&["rebase", "-i", &format!("{}~1", hash)])
@@ -49,7 +44,7 @@ fn amend_to_selected_commit(hash: &str) -> Result<(), Box<dyn std::error::Error>
 
     // Step 4: Modify the rebase todo file
     let todo_path = ".git/rebase-merge/git-rebase-todo";
-    let mut content = fs::read_to_string(todo_path)?;
+    let content = fs::read_to_string(todo_path)?;
 
     // Find the line with the target commit and the line with "__amend__"
     let lines: Vec<&str> = content.lines().collect();
@@ -61,8 +56,8 @@ fn amend_to_selected_commit(hash: &str) -> Result<(), Box<dyn std::error::Error>
 
     // Move the "__amend__" line just after the target commit and change it to "fixup"
     let mut new_lines = lines.clone();
-    let amend_line = new_lines.remove(amend_index);
-    new_lines.insert(target_index + 1, &amend_line.replace("pick", "fixup"));
+    let amend_line = new_lines.remove(amend_index).replace("pick", "fixup");
+    new_lines.insert(target_index + 1, amend_line.as_str());
 
     // Write the modified content back to the todo file
     let new_content = new_lines.join("\n");
@@ -84,7 +79,15 @@ fn main() {
         Select::new("What's your favorite fruit?", commits).prompt();
 
     match ans {
-        Ok(choice) => println!("{}! That's mine too!", choice),
+        Ok(choice) => amend_to_selected_commit(
+            choice
+                .split(' ')
+                .take(1)
+                .collect::<Vec<&str>>()
+                .last()
+                .unwrap(),
+        )
+        .unwrap(),
         Err(_) => println!("There was an error, please try again"),
     }
 
